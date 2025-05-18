@@ -20,6 +20,11 @@ class WarehouseApp:
         self.items = self.generate_random_items(count=5)
         self.start = None
 
+        self.load_label = tk.Label(master, text="Load: 0 / 3", font=("Arial", 14))
+        self.load_label.pack(pady=5)
+        self.current_load = 0
+        self.max_load = 3
+
         self.canvas = GridCanvas(
             master,
             rows,
@@ -42,12 +47,15 @@ class WarehouseApp:
             if (row, col) == (0, 0):
                 continue  # Prevent crates at warehouse position
             positions.add((row, col))
-        # Use index for crate image: 0 or 1
-        return [(row, col, random.randint(0, len(self.crate_paths) - 1)) for (row, col) in positions]
+        # (row, col, crate_img_index, weight)
+        return [(row, col, random.randint(0, len(self.crate_paths) - 1), random.randint(1, 3)) for (row, col) in positions]
 
     def on_start_selected(self, position):
         self.start = position
         self.plan_route()
+
+    def update_load_label(self):
+        self.load_label.config(text=f"Load: {self.current_load} / {self.max_load}")
 
     def plan_route(self):
         if not self.start:
@@ -55,6 +63,8 @@ class WarehouseApp:
 
         pathfinder = AStarPathfinder(self.grid)
         current_pos = self.start
+        self.current_load = 0
+        self.update_load_label()
 
         while self.items:
             # Find closest crate by Manhattan distance
@@ -63,10 +73,26 @@ class WarehouseApp:
                 key=lambda item: abs(item[0] - current_pos[0]) + abs(item[1] - current_pos[1])
             )
             goal = (closest_item[0], closest_item[1])
+            crate_weight = closest_item[3]
 
+            # If adding this crate exceeds max load, go back to warehouse first
+            if self.current_load + crate_weight > self.max_load:
+                # Return to warehouse (0,0) to drop off
+                path_back = pathfinder.find_path(current_pos, (0, 0))
+                if path_back:
+                    for step in path_back[1:]:
+                        self.canvas.move_forklift(current_pos, step)
+                        self.canvas.canvas.update()
+                        self.master.after(150)
+                        current_pos = step
+                # Drop off
+                self.current_load = 0
+                self.update_load_label()
+
+            # Move to crate
             path = pathfinder.find_path(current_pos, goal)
             if not path:
-                # No path found; remove this item and continue
+                # No path, remove item and continue
                 self.items.remove(closest_item)
                 self.canvas.items = self.items
                 continue
@@ -77,13 +103,29 @@ class WarehouseApp:
                 self.master.after(150)
                 current_pos = step
 
+            # Pick up crate: add weight
+            self.current_load += crate_weight
+            self.update_load_label()
+
             # Remove crate from canvas and internal lists
             self.canvas.clear_crate(goal)
             self.items = [i for i in self.items if (i[0], i[1]) != goal]
-            self.canvas.items = self.items  # Sync internal canvas state
+            self.canvas.items = self.items
 
             self.canvas.canvas.update()
             self.master.after(150)
+
+        # After collecting all, return to warehouse to drop off remaining load if any
+        if self.current_load > 0 and current_pos != (0, 0):
+            path_back = pathfinder.find_path(current_pos, (0, 0))
+            if path_back:
+                for step in path_back[1:]:
+                    self.canvas.move_forklift(current_pos, step)
+                    self.canvas.canvas.update()
+                    self.master.after(150)
+                    current_pos = step
+            self.current_load = 0
+            self.update_load_label()
 
 
 if __name__ == "__main__":

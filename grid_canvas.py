@@ -26,7 +26,7 @@ class GridCanvas:
         self.icon_refs = {}      # Position -> image ID
         self.image_refs = []     # Keep images in memory
         self.forklift_pos = None
-        self.items = []          # List of (row, col, item_info)
+        self.items = []          # List of (row, col, crate_img_index, weight)
         self.canvas.bind("<Button-1>", self.set_starting_point)
 
     def load_image(self, path):
@@ -54,12 +54,16 @@ class GridCanvas:
             y = self.cell_size // 2
             self.canvas.create_image(x, y, image=self.warehouse_image)
 
-        # Draw crates, skip warehouse position (0,0)
-        for (i, j, _) in self.items:
+        # Draw crates with weights (skip warehouse position)
+        for (i, j, img_index, weight) in self.items:
             if (i, j) == (0, 0):
                 continue
-            crate_img = random.choice(self.crate_imgs)
+            crate_img = self.crate_imgs[img_index]
             self.draw_image((i, j), crate_img)
+            # Draw weight text on crate
+            x = j * self.cell_size + self.cell_size // 2
+            y = i * self.cell_size + self.cell_size // 2
+            self.canvas.create_text(x, y, text=str(weight), fill="black", font=("Arial", 12, "bold"))
 
         # Draw forklift at current position
         if self.forklift_pos:
@@ -98,8 +102,8 @@ class GridCanvas:
             self.canvas.delete(self.icon_refs[pos])
             del self.icon_refs[pos]
 
-        # ✅ Remove crate from internal item list
+        # Remove crate from internal item list
         self.items = [item for item in self.items if (item[0], item[1]) != pos]
 
-        # ✅ Re-draw grid to reflect the removal
+        # Re-draw grid to reflect the removal
         self.draw_grid()
