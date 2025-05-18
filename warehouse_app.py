@@ -13,6 +13,7 @@ class WarehouseApp:
         self.cell_size = 50
         self.grid = np.zeros((rows, cols), dtype=int)
 
+        self.warehouse_path = "Images/Warehouse.png"   # Warehouse image path
         self.forklift_path = "Images/Forklift.png"
         self.crate_paths = ["Images/Crates.png"]
 
@@ -26,7 +27,8 @@ class WarehouseApp:
             self.cell_size,
             self.forklift_path,
             self.crate_paths,
-            self.on_start_selected
+            self.on_start_selected,
+            warehouse_image_path=self.warehouse_path  # pass warehouse image
         )
 
         self.canvas.items = self.items
@@ -37,6 +39,8 @@ class WarehouseApp:
         while len(positions) < count:
             row = random.randint(0, self.rows - 1)
             col = random.randint(0, self.cols - 1)
+            if (row, col) == (0, 0):
+                continue  # Prevent crates at warehouse position
             positions.add((row, col))
         # Use index for crate image: 0 or 1
         return [(row, col, random.randint(0, len(self.crate_paths) - 1)) for (row, col) in positions]
@@ -50,12 +54,22 @@ class WarehouseApp:
             return
 
         pathfinder = AStarPathfinder(self.grid)
-        sorted_items = sorted(self.items, key=lambda x: -x[2])  # Based on priority/image index
         current_pos = self.start
 
-        for item in sorted_items:
-            goal = (item[0], item[1])
+        while self.items:
+            # Find closest crate by Manhattan distance
+            closest_item = min(
+                self.items,
+                key=lambda item: abs(item[0] - current_pos[0]) + abs(item[1] - current_pos[1])
+            )
+            goal = (closest_item[0], closest_item[1])
+
             path = pathfinder.find_path(current_pos, goal)
+            if not path:
+                # No path found; remove this item and continue
+                self.items.remove(closest_item)
+                self.canvas.items = self.items
+                continue
 
             for step in path[1:]:
                 self.canvas.move_forklift(current_pos, step)

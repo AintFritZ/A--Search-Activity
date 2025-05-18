@@ -5,7 +5,7 @@ from PIL import Image, ImageTk
 
 
 class GridCanvas:
-    def __init__(self, master, rows, cols, cell_size, forklift_path, crate_paths, on_start_selected):
+    def __init__(self, master, rows, cols, cell_size, forklift_path, crate_paths, on_start_selected, warehouse_image_path=None):
         self.master = master
         self.rows = rows
         self.cols = cols
@@ -20,6 +20,8 @@ class GridCanvas:
         # Load images
         self.forklift_img = self.load_image(forklift_path)
         self.crate_imgs = [self.load_image(p) for p in crate_paths]
+
+        self.warehouse_image = self.load_image(warehouse_image_path) if warehouse_image_path else None
 
         self.icon_refs = {}      # Position -> image ID
         self.image_refs = []     # Keep images in memory
@@ -37,6 +39,7 @@ class GridCanvas:
         self.icon_refs.clear()
         self.image_refs.clear()
 
+        # Draw grid squares
         for i in range(self.rows):
             for j in range(self.cols):
                 x1 = j * self.cell_size
@@ -45,15 +48,22 @@ class GridCanvas:
                 y2 = y1 + self.cell_size
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill="white", outline="gray")
 
-        # Draw crates
+        # Draw warehouse image at top-left corner (0,0)
+        if self.warehouse_image:
+            x = self.cell_size // 2
+            y = self.cell_size // 2
+            self.canvas.create_image(x, y, image=self.warehouse_image)
+
+        # Draw crates, skip warehouse position (0,0)
         for (i, j, _) in self.items:
+            if (i, j) == (0, 0):
+                continue
             crate_img = random.choice(self.crate_imgs)
             self.draw_image((i, j), crate_img)
 
         # Draw forklift at current position
         if self.forklift_pos:
             self.draw_forklift(self.forklift_pos)
-
 
     def set_starting_point(self, event):
         row = int((event.y + self.cell_size / 2) // self.cell_size)
@@ -93,5 +103,3 @@ class GridCanvas:
 
         # ✅ Re-draw grid to reflect the removal
         self.draw_grid()
-
-
