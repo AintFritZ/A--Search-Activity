@@ -2,6 +2,7 @@ import tkinter as tk
 import numpy as np
 from PIL import Image, ImageTk
 
+
 class GridCanvas:
     def __init__(self, master, rows, cols, cell_size, forklift_path, crate_paths, on_start_selected, warehouse_image_path=None):
         self.master = master
@@ -22,7 +23,7 @@ class GridCanvas:
         self.icon_refs = {}
         self.image_refs = []
         self.forklift_pos = None
-        self.items = []  # list of tuples: (row, col, crate_img_index, weight)
+        self.items = []  # (row, col, crate_img_index, weight)
         self.highlighted_path = []
 
         self.canvas.bind("<Button-1>", self.set_starting_point)
@@ -37,16 +38,20 @@ class GridCanvas:
         self.icon_refs.clear()
         self.image_refs.clear()
 
-        # Draw background grid
-        for row in range(self.rows):
-            for col in range(self.cols):
-                x1 = col * self.cell_size
-                y1 = row * self.cell_size
+        # 1. Draw warehouse background image first (bottom layer)
+        if self.warehouse_image:
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.warehouse_image)
+
+        # 2. Draw grid cells (optional - drawn over warehouse)
+        for i in range(self.rows):
+            for j in range(self.cols):
+                x1 = j * self.cell_size
+                y1 = i * self.cell_size
                 x2 = x1 + self.cell_size
                 y2 = y1 + self.cell_size
-                self.canvas.create_rectangle(x1, y1, x2, y2, fill="white", outline="gray")
+                self.canvas.create_rectangle(x1, y1, x2, y2, fill="", outline="gray")
 
-        # Draw highlighted path cells
+        # 3. Draw highlighted path ABOVE warehouse and grid cells
         for (i, j) in self.highlighted_path:
             x1 = j * self.cell_size
             y1 = i * self.cell_size
@@ -54,36 +59,23 @@ class GridCanvas:
             y2 = y1 + self.cell_size
             self.canvas.create_rectangle(x1, y1, x2, y2, fill="lightblue", outline="blue")
 
-        # Draw warehouse image at (0,0)
-        if self.warehouse_image:
-            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.warehouse_image)
-
-        # Draw crates with weights above them
-        for item in self.items:
-            r, c, img_index, weight = item
-            if (r, c) == (0, 0):
+        # 4. Draw items (crates) on top of highlighted path
+        for (i, j, img_index, weight) in self.items:
+            if (i, j) == (0, 0):
                 continue
-            x = c * self.cell_size
-            y = r * self.cell_size
             crate_img = self.crate_imgs[img_index]
-            self.canvas.create_image(x, y, anchor=tk.NW, image=crate_img)
-            self.image_refs.append(crate_img)
-            # Display weight text above the crate (top center of cell)
-            text_x = x + self.cell_size // 2
-            text_y = y + 10  # 10 pixels from top of cell
-            self.canvas.create_text(text_x, text_y, text=str(weight), fill="black", font=("Arial", 12, "bold"))
+            self.draw_image((i, j), crate_img)
+            x = j * self.cell_size + self.cell_size // 2
+            y = i * self.cell_size + self.cell_size // 2 - 10
+            self.canvas.create_text(x, y, text=str(weight), fill="black", font=("Arial", 12, "bold"))
 
-        # Draw forklift once and store reference
+        # 5. Draw forklift on top of everything
         if self.forklift_pos:
-            r, c = self.forklift_pos
-            x = c * self.cell_size
-            y = r * self.cell_size
-            forklift_id = self.canvas.create_image(x, y, anchor=tk.NW, image=self.forklift_img)
-            self.icon_refs['forklift'] = forklift_id
+            self.draw_forklift(self.forklift_pos)
 
     def set_starting_point(self, event):
-        row = int((event.y + self.cell_size / 2) // self.cell_size)
-        col = int((event.x + self.cell_size / 2) // self.cell_size)
+        row = int(event.y // self.cell_size)
+        col = int(event.x // self.cell_size)
 
         if 0 <= row < self.rows and 0 <= col < self.cols:
             self.start = (row, col)
@@ -91,35 +83,40 @@ class GridCanvas:
             self.on_start_selected(self.start)
             self.draw_grid()
 
-    def move_forklift(self, from_pos, to_pos):
-        # Delete old forklift image before drawing new one
-        if 'forklift' in self.icon_refs:
-            self.canvas.delete(self.icon_refs['forklift'])
-            del self.icon_refs['forklift']
+    def draw_image(self, position, img):
+        i, j = position
+        x = j * self.cell_size + self.cell_size // 2
+        y = i * self.cell_size + self.cell_size // 2
+        self.icon_refs[position] = self.canvas.create_image(x, y, image=img)
+        self.image_refs.append(img)
 
-        r, c = to_pos
-        x = c * self.cell_size
-        y = r * self.cell_size
-        forklift_id = self.canvas.create_image(x, y, anchor=tk.NW, image=self.forklift_img)
-        self.icon_refs['forklift'] = forklift_id
-        self.forklift_pos = to_pos
+    def draw_forklift(self, position):
+        # Remove previous forklift image if exists
+        if self.forklift_pos in self.icon_refs:
+            self.canvas.delete(self.icon_refs[self.forklift_pos])
+            del self.icon_refs[self.forklift_pos]
+
+        self.draw_image(position, self.forklift_img)
+        self.forklift_pos = position
+
+    def move_forklift(self, from_pos, to_pos):
+        self.draw_forklift(to_pos)
 
     def clear_crate(self, pos):
-        # Remove crate image if exists
+        # Remove crate image on canvas
         if pos in self.icon_refs:
             self.canvas.delete(self.icon_refs[pos])
             del self.icon_refs[pos]
 
-        # Remove crate from items and redraw grid
+        # Remove crate from items list
         self.items = [item for item in self.items if (item[0], item[1]) != pos]
         self.draw_grid()
 
     def highlight_path(self, path):
         self.highlighted_path = path
         self.draw_grid()
-    
+
     def highlight_path_cell(self, position):
-        # Optional: you can highlight individual cells dynamically
         i, j = position
         x1 = j * self.cell_size
         y1 = i * self.cell_size

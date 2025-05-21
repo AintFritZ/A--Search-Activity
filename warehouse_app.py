@@ -2,8 +2,8 @@ import tkinter as tk
 import numpy as np
 import random
 from PIL import Image, ImageTk
-from astar import AStarPathfinder  # Make sure you have your AStarPathfinder implemented
-from grid_canvas import GridCanvas  # Your grid drawing class
+from astar import AStarPathfinder
+from grid_canvas import GridCanvas
 
 
 class WarehouseApp:
@@ -21,6 +21,8 @@ class WarehouseApp:
         self.start = None
         self.current_load = 0
         self.max_load = 3
+
+        self.is_running = False  # Flag to control ongoing path animation
 
         # Left frame for canvas and controls
         left_frame = tk.Frame(master)
@@ -110,7 +112,6 @@ class WarehouseApp:
 
         items = []
         for row, col in positions:
-            # 50/50 chance for perishable or regular crate
             is_perishable = random.choice([True, False])
             img_index = 1 if is_perishable else 0
             weight = random.randint(1, 2) if is_perishable else random.randint(1, 3)
@@ -126,8 +127,11 @@ class WarehouseApp:
             count_label.config(text=str(counts[i]))
 
     def reset(self):
+        self.is_running = False  # Stop any running animation or movement
+        
         self.items = self.generate_random_items(count=8)
         self.canvas.items = self.items.copy()
+        self.canvas.highlighted_path = []  # clear any highlighted path
         self.canvas.forklift_pos = None
         self.start = None
         self.current_load = 0
@@ -141,39 +145,22 @@ class WarehouseApp:
 
     def on_start_selected(self, position):
         self.start = position
-        # Show the start button once start position selected
-        self.start_button.pack(pady=20)
+        self.start_button.pack(pady=20)  # Show start button once start position selected
 
     def start_collection(self):
+        if self.is_running:
+            return  # Prevent multiple runs at the same time
         if not self.start:
             return
 
-        self.start_button.pack_forget()  # hide button after start
-
+        self.is_running = True
         pathfinder = AStarPathfinder(self.grid)
         current_pos = self.start
         self.current_load = 0
         self.update_load_label()
 
-        items_left = self.items.copy()
-
-        def collect_next():
-            nonlocal current_pos, items_left
-
-            if not items_left:
-                # Return to warehouse if load remains
-                if self.current_load > 0 and current_pos != (0, 0):
-                    path_back = pathfinder.find_path(current_pos, (0, 0))
-                    if path_back:
-                        self.animate_path(path_back, finish_return)
-                    else:
-                        finish_return()
-                else:
-                    finish_collection()
-                return
-
-            # Prioritize perishable crates
-            perishable_items = [item for item in items_left if item[2] == 1]
+        while self.items and self.is_running:
+            perishable_items = [item for item in self.items if item[2] == 1]
             if perishable_items:
                 closest_item = min(
                     perishable_items,
@@ -181,83 +168,78 @@ class WarehouseApp:
                 )
             else:
                 closest_item = min(
-                    items_left,
+                    self.items,
                     key=lambda item: abs(item[0] - current_pos[0]) + abs(item[1] - current_pos[1])
                 )
 
             goal = (closest_item[0], closest_item[1])
             crate_weight = closest_item[3]
 
+            if not self.is_running:
+                break
+
             if self.current_load + crate_weight > self.max_load:
-                # Need to unload first
                 path_back = pathfinder.find_path(current_pos, (0, 0))
                 if path_back:
-                    self.animate_path(path_back, finish_return_and_continue)
-                else:
-                    finish_return_and_continue()
-                return
+                    self.highlight_and_move_path(path_back, current_pos)
+                    current_pos = (0, 0)
+                self.current_load = 0
+                self.update_load_label()
 
-            path_to_crate = pathfinder.find_path(current_pos, goal)
-            if not path_to_crate:
-                # No path, skip this crate
-                items_left.remove(closest_item)
-                collect_next()
-                return
+            if not self.is_running:
+                break
 
-            # Animate path to crate
-            self.animate_path(path_to_crate, lambda: after_reach_crate(closest_item, path_to_crate[-1]))
+            path = pathfinder.find_path(current_pos, goal)
+            if not path:
+                self.items.remove(closest_item)
+                self.canvas.items = self.items
+                self.update_crate_counts()
+                continue
 
-        def after_reach_crate(crate, pos):
-            nonlocal current_pos, items_left
-            current_pos = pos
-            self.current_load += crate[3]
+            self.highlight_and_move_path(path, current_pos)
+            current_pos = goal
+
+            self.current_load += crate_weight
             self.update_load_label()
-            if crate in items_left:
-                items_left.remove(crate)
-            self.items = items_left.copy()
-            self.canvas.items = self.items.copy()
+
+            self.canvas.clear_crate(goal)
+            self.items = [i for i in self.items if (i[0], i[1]) != goal]
+            self.canvas.items = self.items
             self.update_crate_counts()
-            self.canvas.draw_grid()
-            collect_next()
 
-        def finish_return():
-            self.current_load = 0
-            self.update_load_label()
-            finish_collection()
-
-        def finish_collection():
-            # Clear path highlight at end
-            self.canvas.highlight_path([])
-            self.canvas.draw_grid()
-
-        def finish_return_and_continue():
-            nonlocal current_pos
-            current_pos = (0, 0)
-            self.current_load = 0
-            self.update_load_label()
-            self.canvas.draw_grid()
-            collect_next()
-
-        collect_next()
-
-    def animate_path(self, path, callback):
-        # Highlight the current path (excluding start cell)
-        self.canvas.highlight_path(path[1:])
-
-        def move_step(i):
-            if i >= len(path):
-                # Done moving along path
-                self.canvas.highlight_path([])
-                callback()
-                return
-            from_pos = path[i - 1] if i > 0 else path[0]
-            to_pos = path[i]
-            self.canvas.move_forklift(from_pos, to_pos)
             self.canvas.canvas.update()
-            self.master.after(250, lambda: move_step(i + 1))
+            self.master.after(150)
 
-        # Start moving from step 1 (first step after start)
-        move_step(1)
+        if self.is_running and self.current_load > 0 and current_pos != (0, 0):
+            path_back = pathfinder.find_path(current_pos, (0, 0))
+            if path_back:
+                self.highlight_and_move_path(path_back, current_pos)
+                current_pos = (0, 0)
+            self.current_load = 0
+            self.update_load_label()
+
+        self.is_running = False
+
+    def highlight_and_move_path(self, path, start_pos):
+        # Show full path highlight first
+        self.canvas.highlighted_path = path[1:]  # highlight all except start cell
+        self.canvas.draw_grid()
+        self.canvas.canvas.update()
+        self.master.after(800)  # pause to show full path before moving
+
+        current_pos = start_pos
+        for step in path[1:]:
+            if not self.is_running:
+                break
+            # Move forklift without changing highlight
+            self.canvas.move_forklift(current_pos, step)
+            self.canvas.canvas.update()
+            self.master.after(150)
+            current_pos = step
+
+        # Optionally clear highlight after move
+        self.canvas.highlighted_path = []
+        self.canvas.draw_grid()
 
 
 def center_window(win, width, height):
