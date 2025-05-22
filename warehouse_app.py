@@ -1,9 +1,12 @@
 import tkinter as tk
 import numpy as np
 import random
+import time
+import tkinter.messagebox as messagebox
 from PIL import Image, ImageTk
 from astar import AStarPathfinder
 from grid_canvas import GridCanvas
+
 
 
 class WarehouseApp:
@@ -22,9 +25,8 @@ class WarehouseApp:
         self.current_load = 0
         self.max_load = 3
 
-        self.is_running = False  # Flag to control ongoing path animation
+        self.is_running = False
 
-        # Left frame for canvas and controls
         left_frame = tk.Frame(master)
         left_frame.pack(side=tk.LEFT)
 
@@ -46,20 +48,17 @@ class WarehouseApp:
         )
         self.canvas.canvas.pack()
 
-        # Right frame for item count display and start button
         right_frame = tk.Frame(master)
         right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=10)
 
         tk.Label(right_frame, text="Items Left to Collect:", font=("Arial", 12, "bold")).pack(pady=5)
 
-        # Load crate images for display
         self.crate_images_display = []
         for path in self.crate_paths:
             img = Image.open(path)
             img = img.resize((40, 40), Image.Resampling.LANCZOS)
             self.crate_images_display.append(ImageTk.PhotoImage(img))
 
-        # Frame for each crate type and count
         self.crate_count_frames = []
         for i, img in enumerate(self.crate_images_display):
             frame = tk.Frame(right_frame)
@@ -73,7 +72,6 @@ class WarehouseApp:
 
             self.crate_count_frames.append(label_count)
 
-        # Start button (initially hidden)
         self.start_button = tk.Button(
             right_frame,
             text="Start",
@@ -88,7 +86,7 @@ class WarehouseApp:
             bd=4
         )
         self.start_button.pack(pady=20)
-        self.start_button.pack_forget()  # hide initially
+        self.start_button.pack_forget()
 
         def on_enter(e):
             self.start_button['bg'] = '#45a049'
@@ -127,30 +125,27 @@ class WarehouseApp:
             count_label.config(text=str(counts[i]))
 
     def reset(self):
-        self.is_running = False  # Stop any running animation or movement
-        
+        self.is_running = False
         self.items = self.generate_random_items(count=8)
         self.canvas.items = self.items.copy()
-        self.canvas.highlighted_path = []  # clear any highlighted path
+        self.canvas.highlighted_path = []
         self.canvas.forklift_pos = None
         self.start = None
         self.current_load = 0
         self.update_load_label()
         self.update_crate_counts()
         self.canvas.draw_grid()
-        self.start_button.pack_forget()  # hide start button on reset
+        self.start_button.pack_forget()
 
     def update_load_label(self):
         self.load_label.config(text=f"Load: {self.current_load} / {self.max_load}")
 
     def on_start_selected(self, position):
         self.start = position
-        self.start_button.pack(pady=20)  # Show start button once start position selected
+        self.start_button.pack(pady=20)
 
     def start_collection(self):
-        if self.is_running:
-            return  # Prevent multiple runs at the same time
-        if not self.start:
+        if self.is_running or not self.start:
             return
 
         self.is_running = True
@@ -158,6 +153,8 @@ class WarehouseApp:
         current_pos = self.start
         self.current_load = 0
         self.update_load_label()
+
+        start_time = time.time()  # Start timer
 
         while self.items and self.is_running:
             perishable_items = [item for item in self.items if item[2] == 1]
@@ -220,24 +217,24 @@ class WarehouseApp:
 
         self.is_running = False
 
+        elapsed_time = time.time() - start_time
+        messagebox.showinfo("Performance", f"Collection completed in {elapsed_time:.2f} seconds.")
+
     def highlight_and_move_path(self, path, start_pos):
-        # Show full path highlight first
-        self.canvas.highlighted_path = path[1:]  # highlight all except start cell
+        self.canvas.highlighted_path = path[1:]
         self.canvas.draw_grid()
         self.canvas.canvas.update()
-        self.master.after(800)  # pause to show full path before moving
+        self.master.after(800)
 
         current_pos = start_pos
         for step in path[1:]:
             if not self.is_running:
                 break
-            # Move forklift without changing highlight
             self.canvas.move_forklift(current_pos, step)
             self.canvas.canvas.update()
             self.master.after(150)
             current_pos = step
 
-        # Optionally clear highlight after move
         self.canvas.highlighted_path = []
         self.canvas.draw_grid()
 
