@@ -5,8 +5,8 @@ import time
 import tkinter.messagebox as messagebox
 from PIL import Image, ImageTk
 from astar import AStarPathfinder
+from astar_no_heuristic import AStarPathfinderNoHeuristic
 from grid_canvas import GridCanvas
-
 
 
 class WarehouseApp:
@@ -85,7 +85,7 @@ class WarehouseApp:
             relief=tk.RAISED,
             bd=4
         )
-        self.start_button.pack(pady=20)
+        self.start_button.pack(pady=10)
         self.start_button.pack_forget()
 
         def on_enter(e):
@@ -96,6 +96,13 @@ class WarehouseApp:
 
         self.start_button.bind("<Enter>", on_enter)
         self.start_button.bind("<Leave>", on_leave)
+
+        # Dropdown for algorithm selection
+        tk.Label(right_frame, text="Choose Algorithm:", font=("Arial", 12, "bold")).pack(pady=(20, 5))
+        self.algorithm_var = tk.StringVar(value="A*")
+        self.algorithm_dropdown = tk.OptionMenu(right_frame, self.algorithm_var, "A*", "Dijkstra (No Heuristic)")
+        self.algorithm_dropdown.config(font=("Arial", 12))
+        self.algorithm_dropdown.pack()
 
         self.reset()
 
@@ -142,27 +149,41 @@ class WarehouseApp:
 
     def on_start_selected(self, position):
         self.start = position
-        self.start_button.pack(pady=20)
+        self.start_button.pack(pady=10)
 
     def start_collection(self):
         if self.is_running or not self.start:
             return
 
         self.is_running = True
-        pathfinder = AStarPathfinder(self.grid)
+
+        # Select algorithm & prioritization based on dropdown
+        if self.algorithm_var.get() == "A*":
+            pathfinder = AStarPathfinder(self.grid)
+            prioritize_perishable = True
+        else:
+            pathfinder = AStarPathfinderNoHeuristic(self.grid)
+            prioritize_perishable = False
+
         current_pos = self.start
         self.current_load = 0
         self.update_load_label()
 
-        start_time = time.time()  # Start timer
+        start_time = time.time()
 
         while self.items and self.is_running:
-            perishable_items = [item for item in self.items if item[2] == 1]
-            if perishable_items:
-                closest_item = min(
-                    perishable_items,
-                    key=lambda item: abs(item[0] - current_pos[0]) + abs(item[1] - current_pos[1])
-                )
+            if prioritize_perishable:
+                perishable_items = [item for item in self.items if item[2] == 1]
+                if perishable_items:
+                    closest_item = min(
+                        perishable_items,
+                        key=lambda item: abs(item[0] - current_pos[0]) + abs(item[1] - current_pos[1])
+                    )
+                else:
+                    closest_item = min(
+                        self.items,
+                        key=lambda item: abs(item[0] - current_pos[0]) + abs(item[1] - current_pos[1])
+                    )
             else:
                 closest_item = min(
                     self.items,
@@ -249,13 +270,7 @@ def center_window(win, width, height):
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.title("Warehouse Inventory Picker")
-
+    root.title("Warehouse Collection App")
+    center_window(root, 1000, 650)
     app = WarehouseApp(root)
-
-    window_width = app.cols * app.cell_size + 150
-    window_height = app.rows * app.cell_size + 100
-
-    center_window(root, window_width, window_height)
-
     root.mainloop()
